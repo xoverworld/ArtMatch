@@ -1,8 +1,11 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
+import * as LocalAuthentication from "expo-local-authentication";
 import { Link, router } from "expo-router";
-import React, { useState } from "react";
+import * as SecureStore from "expo-secure-store"; // Ensure this is imported for token access
+import React, { useEffect, useState } from "react";
 import {
+  Alert,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -13,15 +16,56 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+// Placeholder for ErrorCard style/component from previous exchange
+const ErrorCard = ({
+  message,
+  onDismiss,
+}: {
+  message: string;
+  onDismiss?: () => void;
+}) => {
+  if (!message) return null;
+  return (
+    <View style={errorStyles.container}>
+      <View style={errorStyles.content}>
+        <Text style={errorStyles.title}>Error</Text>
+        <Text style={errorStyles.message}>{message}</Text>
+      </View>
+      {onDismiss && (
+        <TouchableOpacity onPress={onDismiss} style={errorStyles.closeButton}>
+          <Text style={errorStyles.closeText}>✕</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+};
+
 const loginPage = () => {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+  const [isBiometricSupported, setIsBiometricSupported] = useState(false);
+  const [hasBiometricToken, setHasBiometricToken] = useState(false);
+
+  // --- Check Biometric Support on Load ---
+  useEffect(() => {
+    (async () => {
+      // Check device support
+      const supported = await LocalAuthentication.hasHardwareAsync();
+      setIsBiometricSupported(supported);
+
+      // Check if we already have a secure token saved
+      const token = await SecureStore.getItemAsync("biometric_user_id");
+      setHasBiometricToken(!!token);
+    })();
+  }, []);
+
   const handlePress = async () => {
+    setErrorMessage("");
     await handleLogin();
   };
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-
+  // --- Password Login Logic ---
   const handleLogin = async () => {
     axios
       .post(
@@ -36,17 +80,87 @@ const loginPage = () => {
           },
         }
       )
-      .then(function (response) {
-        console.log(response.data.message);
+      .then(async function (response) {
         if (response.data.message === "Login successful.") {
-          console.log(response.data.userId);
-          AsyncStorage.setItem("userId", response.data.userId);
-          router.push("/main");
+          const receivedUserId = String(response.data.userId);
+
+          // 1. Save UserId to AsyncStorage (for regular session check)
+          await AsyncStorage.setItem("userId", receivedUserId);
+
+          // 2. Offer to save token for biometric login
+          if (isBiometricSupported && !hasBiometricToken) {
+            Alert.alert(
+              "Enable Biometric Login?",
+              "Do you want to enable fingerprint/face ID login for next time?",
+              [
+                { text: "No Thanks", style: "cancel" },
+                {
+                  text: "Enable",
+                  onPress: async () => {
+                    // Save the user ID securely, linked to biometrics
+                    await SecureStore.setItemAsync(
+                      "biometric_user_id",
+                      receivedUserId
+                    );
+                    setHasBiometricToken(true);
+                    router.push("/main");
+                  },
+                },
+              ]
+            );
+          } else {
+            router.push("/main");
+          }
         }
       })
       .catch(function (error) {
-        setError(error.response.data.message);
+        if (error.response) {
+          setErrorMessage(error.response.data.message || "Login failed.");
+        } else {
+          setErrorMessage("Network error or server unreachable.");
+        }
       });
+  };
+
+  // --- Biometric Login Logic ---
+  const handleBiometricAuth = async () => {
+    setErrorMessage("");
+    try {
+      const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+
+      if (!isEnrolled) {
+        setErrorMessage("Biometric security is not set up on your device.");
+        return;
+      }
+
+      const authResult = await LocalAuthentication.authenticateAsync({
+        promptMessage: "Login with Fingerprint / Face ID",
+        cancelLabel: "Use Password",
+      });
+
+      if (authResult.success) {
+        // 1. Retrieve the saved user ID token
+        const storedUserId = await SecureStore.getItemAsync(
+          "biometric_user_id"
+        );
+
+        if (storedUserId) {
+          // 2. Set the regular session storage and log in
+          await AsyncStorage.setItem("userId", storedUserId);
+          router.replace("/main"); // Use replace to prevent going back to login
+        } else {
+          setErrorMessage(
+            "Secure biometric token not found. Please log in with password."
+          );
+          setHasBiometricToken(false);
+        }
+      } else {
+        setErrorMessage("Biometric authentication failed or was cancelled.");
+      }
+    } catch (error) {
+      console.error(error);
+      setErrorMessage("Could not start biometric authentication.");
+    }
   };
 
   return (
@@ -61,13 +175,32 @@ const loginPage = () => {
             <Text style={styles.subtitle}>Sign in to your account</Text>
           </View>
 
-          {error !== "" && (
-            <View style={errorStyles.container}>
-              <Text style={errorStyles.title}>Error: </Text>
-              <Text style={errorStyles.message}>{error}</Text>
-            </View>
-          )}
+          <ErrorCard
+            message={errorMessage}
+            onDismiss={() => setErrorMessage("")}
+          />
+
           <View style={styles.formContainer}>
+            {/* Biometric Button (Shown only if supported and token exists) */}
+            {isBiometricSupported && hasBiometricToken && (
+              <TouchableOpacity
+                style={styles.biometricButton}
+                onPress={handleBiometricAuth}
+              >
+                <Text style={styles.biometricButtonText}>
+                  Login with Biometrics
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {isBiometricSupported && hasBiometricToken && (
+              <View style={styles.divider}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>OR</Text>
+                <View style={styles.dividerLine} />
+              </View>
+            )}
+
             <Text style={styles.label}>Email Address</Text>
             <TextInput
               style={styles.input}
@@ -107,6 +240,48 @@ const loginPage = () => {
     </SafeAreaView>
   );
 };
+
+// --- ERROR CARD STYLES (Retained from previous exchange) ---
+const errorStyles = StyleSheet.create({
+  container: {
+    backgroundColor: "#FEF2F2",
+    borderLeftWidth: 4,
+    borderLeftColor: "#EF4444",
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    shadowColor: "#EF4444",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  content: {
+    flex: 1,
+  },
+  title: {
+    color: "#991B1B",
+    fontWeight: "bold",
+    fontSize: 14,
+    marginBottom: 2,
+  },
+  message: {
+    color: "#B91C1C",
+    fontSize: 13,
+  },
+  closeButton: {
+    padding: 8,
+    marginLeft: 8,
+  },
+  closeText: {
+    color: "#991B1B",
+    fontWeight: "bold",
+    fontSize: 16,
+  },
+});
 
 const styles = StyleSheet.create({
   container: {
@@ -155,8 +330,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#1F2937",
   },
+  // Primary Login Button
   button: {
-    marginTop: 32,
+    marginTop: 20,
     backgroundColor: "#2563EB",
     height: 50,
     borderRadius: 12,
@@ -176,6 +352,39 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "bold",
   },
+  // Biometric Button
+  biometricButton: {
+    marginTop: 0,
+    backgroundColor: "#F3F4F6", // Light gray background
+    height: 50,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
+  },
+  biometricButtonText: {
+    color: "#374151",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  // Divider Styles
+  divider: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: 20,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: "#D1D5DB",
+  },
+  dividerText: {
+    width: 30,
+    textAlign: "center",
+    color: "#9CA3AF",
+    fontWeight: "500",
+  },
   footerContainer: {
     flexDirection: "row",
     justifyContent: "center",
@@ -189,39 +398,6 @@ const styles = StyleSheet.create({
     color: "#2563EB",
     fontWeight: "600",
     fontSize: 14,
-  },
-});
-
-const errorStyles = StyleSheet.create({
-  container: {
-    backgroundColor: "#FEF2F2", // Soft red background
-    borderLeftWidth: 4,
-    borderLeftColor: "#EF4444", // Bright red accent
-    borderRadius: 8,
-    padding: 16,
-    marginBottom: 20,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "flex-start",
-    // Shadow
-    shadowColor: "#EF4444",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  content: {
-    flex: 1,
-  },
-  title: {
-    color: "#991B1B", // Dark red title
-    fontWeight: "bold",
-    fontSize: 14,
-    marginBottom: 2,
-  },
-  message: {
-    color: "#B91C1C", // Slightly lighter red text
-    fontSize: 13,
   },
 });
 

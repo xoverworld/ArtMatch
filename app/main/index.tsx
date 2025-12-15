@@ -1,3 +1,4 @@
+import { Ionicons } from "@expo/vector-icons"; // 1. Import Icons
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import { Link, router } from "expo-router";
@@ -12,7 +13,10 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 
 type PhotoItem = {
   id: string;
@@ -25,6 +29,8 @@ export default function Index() {
   const [menuVisible, setMenuVisible] = useState(false);
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const insets = useSafeAreaInsets();
+
   useEffect(() => {
     const getPhotos = async () => {
       const userId = await AsyncStorage.getItem("userId");
@@ -33,7 +39,6 @@ export default function Index() {
           `https://unsurviving-melania-shroudlike.ngrok-free.dev/photos/${userId}`
         )
         .then(function (response) {
-          // console.log(response.data.length);
           setPhotos(response.data);
         })
         .catch(function (error) {
@@ -48,15 +53,11 @@ export default function Index() {
   }, []);
 
   const handleLogout = async () => {
-    // Clear user session
     await AsyncStorage.setItem("userId", "");
-    // Navigate back to login
     router.replace("/pages/loginPage");
   };
 
   const renderItem = ({ item }: { item: PhotoItem }) => {
-    // Construct the URI.
-    // IMPORTANT: Check if the string already has the prefix. If not, add it.
     const imageUri = item.photo_data.startsWith("data:")
       ? item.photo_data
       : `data:image/jpeg;base64,${item.photo_data}`;
@@ -96,8 +97,7 @@ export default function Index() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Header with Menu Button */}
+    <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
       <View style={styles.header}>
         <View>
           <Text style={styles.greeting}>Welcome Back!</Text>
@@ -108,11 +108,11 @@ export default function Index() {
           style={styles.menuButton}
           onPress={() => setMenuVisible(!menuVisible)}
         >
-          <Text style={styles.menuIcon}>⋮</Text>
+          {/* 2. Replace Emoji with Icon */}
+          <Ionicons name="ellipsis-vertical" size={24} color="#1F2937" />
         </TouchableOpacity>
       </View>
 
-      {/* Dropdown Menu (Conditionally Rendered) */}
       {menuVisible && (
         <View style={styles.dropdown}>
           <TouchableOpacity style={styles.dropdownItem} onPress={handleLogout}>
@@ -121,27 +121,37 @@ export default function Index() {
         </View>
       )}
 
-      {/* Main Content Area */}
       <View style={styles.content}>
         <FlatList
           data={photos}
           renderItem={renderItem}
           keyExtractor={(item) => item.uploadedAt}
-          numColumns={2} // Grid layout (2 images per row)
-          contentContainerStyle={styles.listContent}
+          numColumns={2}
+          contentContainerStyle={[
+            styles.listContent,
+            { paddingBottom: 130 + insets.bottom },
+          ]}
           ListEmptyComponent={
             <Text style={styles.emptyText}>No photos found.</Text>
           }
         />
       </View>
 
-      {/* Floating Camera Button (Middle Bottom) */}
-      <View style={styles.fabContainer}>
+      {/* Floating Camera Button */}
+      <View
+        style={[
+          styles.fabContainer,
+          {
+            height: 100 + insets.bottom,
+            paddingBottom: insets.bottom,
+          },
+        ]}
+      >
         <View style={{ alignItems: "center", justifyContent: "center" }}>
           <Link href="/main/cameraPage" asChild>
             <TouchableOpacity style={styles.fab}>
-              {/* Camera Icon (Emoji used for simplicity, can be an Icon) */}
-              <Text style={styles.fabIcon}></Text>
+              {/* 3. Replace Emoji with Icon */}
+              <Ionicons name="camera" size={32} color="white" />
             </TouchableOpacity>
           </Link>
           <Text style={styles.fabLabel}>Open Camera</Text>
@@ -153,22 +163,22 @@ export default function Index() {
 
 const { width } = Dimensions.get("window");
 const spacing = 10;
-const itemSize = (width - spacing * 3) / 2; // Calculate width for 2 columns
+const itemSize = (width - spacing * 3) / 2;
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#F9FAFB",
-    position: "relative", // Needed for absolute positioning context
+    position: "relative",
   },
   header: {
-    flexDirection: "row", // Layout horizontally
-    justifyContent: "space-between", // Push items to edges
+    flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 24,
     paddingTop: 20,
     paddingBottom: 20,
-    zIndex: 1, // Ensure header is below dropdown z-index
+    zIndex: 1,
   },
   greeting: {
     fontSize: 28,
@@ -179,18 +189,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#6B7280",
   },
-  // Menu Styles
   menuButton: {
     padding: 8,
   },
-  menuIcon: {
-    fontSize: 28,
-    fontWeight: "bold",
-    color: "#1F2937",
-  },
+  // Removed menuIcon style as we pass size/color props directly to Icon component
   dropdown: {
     position: "absolute",
-    top: 80, // Position below header
+    top: 80,
     right: 24,
     backgroundColor: "white",
     borderRadius: 12,
@@ -201,7 +206,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 12,
     elevation: 5,
-    zIndex: 10, // Ensure it floats on top
+    zIndex: 10,
   },
   dropdownItem: {
     padding: 12,
@@ -212,34 +217,28 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: "center",
   },
-  // Content Styles
   content: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
   },
-  placeholderText: {
-    fontSize: 18,
-    color: "#9CA3AF",
-    fontWeight: "500",
-  },
-  // Floating Action Button (FAB) Styles
   fabContainer: {
     position: "absolute",
-    bottom: 15, // Distance from bottom
+    bottom: 0,
     left: 0,
     right: 0,
-    alignItems: "center", // Centers horizontally
+    alignItems: "center",
     backgroundColor: "white",
-    borderColor: "black",
+    borderColor: "#E5E7EB",
     borderTopWidth: 1,
     width: width,
-    height: 100,
+    justifyContent: "center",
+    zIndex: 20,
   },
   fab: {
-    width: 72,
-    height: 72,
-    borderRadius: 36, // Circular
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: "#2563EB",
     justifyContent: "center",
     alignItems: "center",
@@ -247,28 +246,23 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
-    elevation: 0,
-    marginTop: 8,
+    elevation: 4,
+    marginBottom: 4,
   },
-  fabIcon: {
-    fontSize: 32,
-  },
+  // Removed fabIcon style
   fabLabel: {
     color: "#4B5563",
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: "600",
   },
-
   listContent: {
     padding: spacing,
-    paddingBottom: 150, // Add padding so photos can scroll above the FAB
   },
   imageContainer: {
     margin: spacing / 2,
     borderRadius: 12,
     overflow: "hidden",
     backgroundColor: "#eee",
-    // Shadow
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -277,7 +271,7 @@ const styles = StyleSheet.create({
   },
   image: {
     width: itemSize,
-    height: itemSize, // Square images
+    height: itemSize,
   },
   emptyText: {
     textAlign: "center",

@@ -1,85 +1,138 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Ionicons } from "@expo/vector-icons";
+import { useIsFocused } from "@react-navigation/native"; // 1. Import useIsFocused
 import axios from "axios";
+import * as Brightness from "expo-brightness";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
-import * as ImagePicker from "expo-image-picker"; // Import Image Picker
-import { useRouter } from "expo-router"; // Import Router
-import { useRef, useState } from "react";
+import * as ImagePicker from "expo-image-picker";
+import { useRouter } from "expo-router";
+import { LightSensor } from "expo-sensors";
+import { useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
+  Button,
   Image,
+  Platform,
   SafeAreaView,
   StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
+  Vibration,
   View,
 } from "react-native";
 
 export default function CameraPage() {
-  const router = useRouter(); // Initialize router
+  const router = useRouter();
+  const isFocused = useIsFocused(); // 2. Get focus state
   const [facing, setFacing] = useState<"front" | "back">("back");
   const [permission, requestPermission] = useCameraPermissions();
   const [photo, setPhoto] = useState<string | null | undefined>(null);
+  const [isDark, setIsDark] = useState(false);
+  const [flashActive, setFlashActive] = useState(false);
+  const [loading, setLoading] = useState(false);
+
   const cameraRef = useRef<CameraView>(null);
 
-  // 1. Loading State
-  if (!permission) {
-    return <View style={styles.container} />;
-  }
+  // 3. Track if component is mounted to prevent state updates after unmount
+  const isMounted = useRef(true);
+  const originalBrightness = useRef<number | null>(null);
 
-  // 2. Permission Denied State
+  // 4. Only enable torch if facing back AND dark AND screen is focused
+  const isBackFlashOn = facing === "back" && isDark && isFocused;
+
+  // --- Light Sensor Logic ---
+  useEffect(() => {
+    // Reset mount state on load
+    isMounted.current = true;
+
+    if (Platform.OS === "ios" || Platform.OS === "android") {
+      LightSensor.setUpdateInterval(500);
+      const subscription = LightSensor.addListener(({ illuminance }) => {
+        if (isMounted.current) {
+          setIsDark(illuminance < 50);
+        }
+      });
+      return () => subscription.remove();
+    }
+
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
+  // --- Safety Cleanup: Restore brightness if user leaves screen ---
+  useEffect(() => {
+    return () => {
+      isMounted.current = false;
+      restoreBrightness();
+    };
+  }, []);
+
+  // 5. Failsafe: Force turn off flash if screen loses focus (tab switch/home)
+  useEffect(() => {
+    if (!isFocused) {
+      restoreBrightness();
+      setFlashActive(false);
+    }
+  }, [isFocused]);
+
+  // Helper to restore brightness
+  const restoreBrightness = async () => {
+    if (originalBrightness.current !== null) {
+      await Brightness.setBrightnessAsync(originalBrightness.current);
+      originalBrightness.current = null;
+    }
+  };
+
+  if (!permission) return <View style={styles.container} />;
   if (!permission.granted) {
     return (
       <View style={styles.permissionContainer}>
-        <Text style={styles.permissionText}>
-          We need your permission to show the camera
-        </Text>
-        <TouchableOpacity
-          style={styles.permissionButton}
-          onPress={requestPermission}
-        >
-          <Text style={styles.permissionButtonText}>Grant Permission</Text>
-        </TouchableOpacity>
+        <Text style={styles.permissionText}>Permission needed</Text>
+        <Button onPress={requestPermission} title="Grant Permission" />
       </View>
     );
   }
 
-  // 3. Flip Camera
   function toggleCameraFacing() {
     setFacing((current) => (current === "back" ? "front" : "back"));
   }
 
-  // 4. Pick Image from Gallery
   const pickImage = async () => {
-    // No permissions request is necessary for launching the image library
     let result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: false, // Set to true if you want cropping
       quality: 1,
-      base64: true, // We need the base64 to save/display it consistently with camera flow
+      base64: true,
     });
-
-    if (!result.canceled) {
-      // If user picked an image, set it as the current photo
-      // result.assets[0].base64 might be null if we don't request it, but we did.
-      // However, for consistency with our "photo" state which expects a base64 string or URI...
-      // Our preview logic uses `data:image/jpeg;base64,${photo}`.
-      // So we should strictly set the base64 string here.
-
-      if (result.assets[0].base64) {
-        setPhoto(result.assets[0].base64);
-      } else {
-        // Fallback if base64 is missing (sometimes happens on large files without options),
-        // but since we passed base64: true, it should be there.
-        // For now we assume it works.
-      }
+    if (!result.canceled && result.assets[0].base64) {
+      setPhoto(result.assets[0].base64);
     }
   };
 
-  // 5. Take Picture
   async function takePicture() {
     if (cameraRef.current) {
       try {
+        // 1. Trigger Flash Sequence if needed
+        if (facing === "front" && isDark) {
+          if (!isMounted.current) return;
+
+          setFlashActive(true);
+
+          // Save current brightness to REF
+          originalBrightness.current = await Brightness.getBrightnessAsync();
+          await Brightness.setBrightnessAsync(1.0);
+          console.log(originalBrightness.current);
+
+          // Wait for light to flood
+          await new Promise((resolve) => setTimeout(resolve, 300));
+
+          if (!isMounted.current) return;
+        }
+
+        // 2. Capture
+        Vibration.vibrate(100);
         const photo = await cameraRef.current.takePictureAsync({
           base64: true,
         });
@@ -88,48 +141,84 @@ export default function CameraPage() {
           const result = await manipulateAsync(
             photo.uri,
             [{ resize: { width: 1080 } }],
-            {
-              compress: 0.5,
-              format: SaveFormat.JPEG,
-              base64: true,
-            }
+            { compress: 0.5, format: SaveFormat.JPEG, base64: true }
           );
-          setPhoto(result.base64);
+          if (isMounted.current) {
+            setPhoto(result.base64);
+          }
         }
       } catch (error) {
-        console.log("Error taking picture:", error);
+        console.log("Error:", error);
+      } finally {
+        // 3. ALWAYS Restore Brightness immediately after capture
+        if (isMounted.current) {
+          setFlashActive(false);
+        }
+        await restoreBrightness();
       }
     }
   }
 
-  const handleSave = async () => {
-    const userId = await AsyncStorage.getItem("userId");
+  // const handleSave = async () => {
+  //   const userId = await AsyncStorage.getItem("userId");
+  //   axios
+  //     .post(
+  //       "https://unsurviving-melania-shroudlike.ngrok-free.dev/upload-photo",
+  //       {
+  //         UserId: userId,
+  //         Photo_data: photo,
+  //       },
+  //       { headers: { "Content-Type": "application/json" } }
+  //     )
+  //     .then(() => {
+  //       Alert.alert("Success", "Photo uploaded!");
+  //       setPhoto(null);
+  //     })
+  //     .catch(() => Alert.alert("Error", "Failed to upload."));
+  // };
+
+  const handleMatch = async () => {
+    setLoading(true);
     axios
       .post(
-        "https://unsurviving-melania-shroudlike.ngrok-free.dev/upload-photo",
+        "https://unsurviving-melania-shroudlike.ngrok-free.dev/match-photo",
         {
-          UserId: userId,
-          Photo_data: photo,
+          photoData: String(photo),
         },
-        {
-          headers: {
-            "Content-Type": "application/json",
-          },
-        }
+        { headers: { "Content-Type": "application/json" } }
       )
-      .then(function (response) {
-        console.log(response.data.message);
-        alert("Photo uploaded successfully!");
-        // setPhoto(null); // Reset after upload
-        router.push("/main");
+      .then((response) => {
+        // Alert.alert("Success", "Photo uploaded!");
+        setPhoto(null);
+        setLoading(false);
+        router.push({
+          pathname: "/main/matchResult",
+          params: {
+            matched_photo: response.data.matched_photo,
+            author: response.data.author,
+            matchID: response.data.matchId,
+            name: response.data.name,
+            category: response.data.category,
+            similarityDistance: response.data.similarityDistance,
+          },
+        });
+        console.log(response.data.matched_photo);
       })
-      .catch(function (error) {
-        console.log(error.status);
-        alert("Failed to upload photo.");
+      .catch((error) => {
+        Alert.alert("Error", "Failed to upload.");
+        console.log(error.response.data);
       });
   };
 
-  // 6. Review Photo Screen
+  if (loading) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color="#2563EB" />
+        <Text style={styles.loadingText}>Analyzing match...</Text>
+      </View>
+    );
+  }
+
   if (photo) {
     return (
       <SafeAreaView style={styles.previewContainer}>
@@ -145,74 +234,98 @@ export default function CameraPage() {
           >
             <Text style={styles.controlText}>Cancel</Text>
           </TouchableOpacity>
-
           <TouchableOpacity
             style={[styles.controlButton, styles.saveButton]}
-            onPress={handleSave}
+            onPress={handleMatch}
           >
-            <Text style={styles.saveText}>Save Photo</Text>
+            <Text style={styles.saveText}>Match</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
   }
 
-  // 7. Camera View
   return (
     <View style={styles.container}>
       <StatusBar hidden />
-      <CameraView style={styles.camera} facing={facing} ref={cameraRef}>
-        {/* Top Bar: Back Button */}
-        <SafeAreaView style={styles.topBar}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.push("/main")}
-          >
-            <Text style={styles.backButtonText}>✕</Text>
-          </TouchableOpacity>
-        </SafeAreaView>
 
-        <View style={styles.cameraControlsContainer}>
-          {/* Left: Gallery Button */}
-          <TouchableOpacity style={styles.sideButton} onPress={pickImage}>
-            <Text style={styles.iconText}>🖼️</Text>
-          </TouchableOpacity>
+      {/* 6. Only render Camera if focused to ensure resources are freed */}
+      {isFocused && (
+        <CameraView
+          style={styles.camera}
+          facing={facing}
+          ref={cameraRef}
+          enableTorch={isBackFlashOn}
+        >
+          {flashActive && (
+            <View style={styles.selfieOverlay} pointerEvents="none" />
+          )}
 
-          {/* Center: Snap Button */}
-          <TouchableOpacity
-            style={styles.snapButtonOuter}
-            onPress={takePicture}
-          >
-            <View style={styles.snapButtonInner} />
-          </TouchableOpacity>
+          <SafeAreaView style={styles.topBar}>
+            <TouchableOpacity
+              style={styles.backButton}
+              // 7. CHANGED: Use replace instead of push
+              onPress={() => router.replace("/main")}
+            >
+              <Text style={styles.backButtonText}>✕</Text>
+            </TouchableOpacity>
 
-          {/* Right: Flip Button */}
-          <TouchableOpacity
-            style={styles.sideButton}
-            onPress={toggleCameraFacing}
-          >
-            <Text style={styles.iconText}>🔄</Text>
-          </TouchableOpacity>
-        </View>
-      </CameraView>
+            {(isBackFlashOn || (facing === "front" && isDark)) && (
+              <View style={styles.flashIndicator}>
+                <Ionicons
+                  name={facing === "front" ? "sunny" : "flash"}
+                  size={16}
+                  color="black"
+                />
+                <Text style={styles.flashText}>
+                  {facing === "front" ? " Flash Ready" : " Flash On"}
+                </Text>
+              </View>
+            )}
+          </SafeAreaView>
+
+          <View style={styles.cameraControlsContainer}>
+            <TouchableOpacity style={styles.sideButton} onPress={pickImage}>
+              <Ionicons name="image-outline" size={32} color="white" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.snapButtonOuter}
+              onPress={takePicture}
+            >
+              <View style={styles.snapButtonInner} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.sideButton}
+              onPress={toggleCameraFacing}
+            >
+              <Ionicons name="sync-outline" size={32} color="white" />
+            </TouchableOpacity>
+          </View>
+        </CameraView>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "black",
+  container: { flex: 1, backgroundColor: "black" },
+  camera: { flex: 1 },
+  selfieOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(255, 255, 255, 0.9)",
+    zIndex: 5,
   },
-  camera: {
-    flex: 1,
-  },
-  // Top Bar
   topBar: {
     position: "absolute",
     top: 40,
     left: 20,
+    right: 20,
     zIndex: 10,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   backButton: {
     width: 40,
@@ -222,12 +335,17 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  backButtonText: {
-    color: "white",
-    fontSize: 20,
-    fontWeight: "bold",
+  backButtonText: { color: "white", fontSize: 20, fontWeight: "bold" },
+  flashIndicator: {
+    backgroundColor: "rgba(255, 215, 0, 0.9)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
   },
-  // Permission Styles
+  flashText: { color: "black", fontWeight: "bold", fontSize: 12 },
   permissionContainer: {
     flex: 1,
     justifyContent: "center",
@@ -241,18 +359,6 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     color: "#374151",
   },
-  permissionButton: {
-    backgroundColor: "#2563EB",
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-  },
-  permissionButtonText: {
-    color: "white",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  // Camera Controls
   cameraControlsContainer: {
     position: "absolute",
     bottom: 0,
@@ -273,15 +379,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  iconText: {
-    fontSize: 24,
-    color: "white",
-  },
+  iconText: { fontSize: 24, color: "white" },
   snapButtonOuter: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: "rgba(255,255,255,0.3)", // Semi-transparent ring
+    backgroundColor: "rgba(255,255,255,0.3)",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -289,24 +392,30 @@ const styles = StyleSheet.create({
     width: 65,
     height: 65,
     borderRadius: 32.5,
-    backgroundColor: "white", // Solid white circle
+    backgroundColor: "white",
   },
-  // Preview / Review Styles
   previewContainer: {
     flex: 1,
     backgroundColor: "black",
     justifyContent: "center",
   },
-  previewImage: {
-    flex: 1,
-    width: "100%",
-  },
+  previewImage: { flex: 1, width: "100%" },
   previewControls: {
     flexDirection: "row",
     justifyContent: "space-around",
     paddingVertical: 20,
     backgroundColor: "black",
     paddingBottom: 40,
+  },
+  center: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: "#4B5563",
   },
   controlButton: {
     paddingVertical: 12,
@@ -315,20 +424,8 @@ const styles = StyleSheet.create({
     minWidth: 120,
     alignItems: "center",
   },
-  retakeButton: {
-    backgroundColor: "#374151", // Dark gray
-  },
-  saveButton: {
-    backgroundColor: "#2563EB", // Brand Blue
-  },
-  controlText: {
-    color: "white",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  saveText: {
-    color: "white",
-    fontSize: 16,
-    fontWeight: "bold",
-  },
+  retakeButton: { backgroundColor: "#374151" },
+  saveButton: { backgroundColor: "#2563EB" },
+  controlText: { color: "white", fontSize: 16, fontWeight: "600" },
+  saveText: { color: "white", fontSize: 16, fontWeight: "bold" },
 });
