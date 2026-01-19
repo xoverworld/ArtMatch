@@ -1,4 +1,3 @@
-//pages/_layout.tsx
 import { router, Stack } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { useEffect, useState } from "react";

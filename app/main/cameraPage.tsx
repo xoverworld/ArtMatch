@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useIsFocused } from "@react-navigation/native"; // 1. Import useIsFocused
+import { useIsFocused } from "@react-navigation/native";
 import axios from "axios";
 import * as Brightness from "expo-brightness";
 import { CameraView, useCameraPermissions } from "expo-camera";
@@ -14,7 +14,6 @@ import {
   Button,
   Image,
   Platform,
-  SafeAreaView,
   StatusBar,
   StyleSheet,
   Text,
@@ -22,10 +21,11 @@ import {
   Vibration,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function CameraPage() {
   const router = useRouter();
-  const isFocused = useIsFocused(); // 2. Get focus state
+  const isFocused = useIsFocused();
   const [facing, setFacing] = useState<"front" | "back">("back");
   const [permission, requestPermission] = useCameraPermissions();
   const [photo, setPhoto] = useState<string | null | undefined>(null);
@@ -35,23 +35,19 @@ export default function CameraPage() {
 
   const cameraRef = useRef<CameraView>(null);
 
-  // 3. Track if component is mounted to prevent state updates after unmount
   const isMounted = useRef(true);
   const originalBrightness = useRef<number | null>(null);
 
-  // 4. Only enable torch if facing back AND dark AND screen is focused
   const isBackFlashOn = facing === "back" && isDark && isFocused;
 
-  // --- Light Sensor Logic ---
   useEffect(() => {
-    // Reset mount state on load
     isMounted.current = true;
 
     if (Platform.OS === "ios" || Platform.OS === "android") {
       LightSensor.setUpdateInterval(500);
       const subscription = LightSensor.addListener(({ illuminance }) => {
         if (isMounted.current) {
-          setIsDark(illuminance < 50);
+          setIsDark(illuminance < 15);
         }
       });
       return () => subscription.remove();
@@ -62,7 +58,6 @@ export default function CameraPage() {
     };
   }, []);
 
-  // --- Safety Cleanup: Restore brightness if user leaves screen ---
   useEffect(() => {
     return () => {
       isMounted.current = false;
@@ -70,7 +65,6 @@ export default function CameraPage() {
     };
   }, []);
 
-  // 5. Failsafe: Force turn off flash if screen loses focus (tab switch/home)
   useEffect(() => {
     if (!isFocused) {
       restoreBrightness();
@@ -78,7 +72,6 @@ export default function CameraPage() {
     }
   }, [isFocused]);
 
-  // Helper to restore brightness
   const restoreBrightness = async () => {
     if (originalBrightness.current !== null) {
       await Brightness.setBrightnessAsync(originalBrightness.current);
@@ -114,24 +107,20 @@ export default function CameraPage() {
   async function takePicture() {
     if (cameraRef.current) {
       try {
-        // 1. Trigger Flash Sequence if needed
         if (facing === "front" && isDark) {
           if (!isMounted.current) return;
 
           setFlashActive(true);
 
-          // Save current brightness to REF
           originalBrightness.current = await Brightness.getBrightnessAsync();
           await Brightness.setBrightnessAsync(1.0);
-          console.log(originalBrightness.current);
+          // console.log(originalBrightness.current);
 
-          // Wait for light to flood
           await new Promise((resolve) => setTimeout(resolve, 300));
 
           if (!isMounted.current) return;
         }
 
-        // 2. Capture
         Vibration.vibrate(100);
         const photo = await cameraRef.current.takePictureAsync({
           base64: true,
@@ -141,16 +130,15 @@ export default function CameraPage() {
           const result = await manipulateAsync(
             photo.uri,
             [{ resize: { width: 1080 } }],
-            { compress: 0.5, format: SaveFormat.JPEG, base64: true }
+            { compress: 0.5, format: SaveFormat.JPEG, base64: true },
           );
           if (isMounted.current) {
             setPhoto(result.base64);
           }
         }
       } catch (error) {
-        console.log("Error:", error);
+        console.error("Error:", error);
       } finally {
-        // 3. ALWAYS Restore Brightness immediately after capture
         if (isMounted.current) {
           setFlashActive(false);
         }
@@ -158,24 +146,6 @@ export default function CameraPage() {
       }
     }
   }
-
-  // const handleSave = async () => {
-  //   const userId = await AsyncStorage.getItem("userId");
-  //   axios
-  //     .post(
-  //       "https://unsurviving-melania-shroudlike.ngrok-free.dev/upload-photo",
-  //       {
-  //         UserId: userId,
-  //         Photo_data: photo,
-  //       },
-  //       { headers: { "Content-Type": "application/json" } }
-  //     )
-  //     .then(() => {
-  //       Alert.alert("Success", "Photo uploaded!");
-  //       setPhoto(null);
-  //     })
-  //     .catch(() => Alert.alert("Error", "Failed to upload."));
-  // };
 
   const handleMatch = async () => {
     setLoading(true);
@@ -185,21 +155,20 @@ export default function CameraPage() {
         {
           photoData: String(photo),
         },
-        { headers: { "Content-Type": "application/json" } }
+        { headers: { "Content-Type": "application/json" } },
       )
       .then((response) => {
         // Alert.alert("Success", "Photo uploaded!");
         setPhoto(null);
-        setLoading(false);
         router.push({
           pathname: "/main/matchResult",
           params: {
-            matched_photo: response.data.matched_photo,
+            photo: String(photo),
             author: response.data.author,
-            matchID: response.data.matchId,
             name: response.data.name,
             category: response.data.category,
             similarityDistance: response.data.similarityDistance,
+            canSwap: response.data.canSwap,
           },
         });
         console.log(response.data.matched_photo);
@@ -207,6 +176,9 @@ export default function CameraPage() {
       .catch((error) => {
         Alert.alert("Error", "Failed to upload.");
         console.log(error.response.data);
+      })
+      .finally(() => {
+        setLoading(false);
       });
   };
 
@@ -249,7 +221,6 @@ export default function CameraPage() {
     <View style={styles.container}>
       <StatusBar hidden />
 
-      {/* 6. Only render Camera if focused to ensure resources are freed */}
       {isFocused && (
         <CameraView
           style={styles.camera}
@@ -264,7 +235,6 @@ export default function CameraPage() {
           <SafeAreaView style={styles.topBar}>
             <TouchableOpacity
               style={styles.backButton}
-              // 7. CHANGED: Use replace instead of push
               onPress={() => router.replace("/main")}
             >
               <Text style={styles.backButtonText}>✕</Text>

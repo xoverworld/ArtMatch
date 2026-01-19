@@ -7,93 +7,60 @@ import {
   Alert,
   Image,
   Platform,
-  SafeAreaView,
   StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-// Define the photo data interface
 interface PhotoData {
-  photo_data: string; // base64 string
   photoId: string;
   userId: string;
-  uploadedAt: string; // ISO string
 }
-
-// Type guard to check if params contain required data
-const hasRequiredParams = (params: any): params is PhotoData => {
-  return (
-    params &&
-    typeof params.photo_data === "string" &&
-    typeof params.photoId === "string"
-  );
-};
-
-const PhotoViewerScreen: React.FC = () => {
-  // Get params from URL (Expo Router uses useLocalSearchParams)
+interface PhotoDetails {
+  photo_data: string;
+  uploadedAt: string;
+}
+export default function photoPage() {
   const params = useLocalSearchParams<Partial<PhotoData>>();
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [photoData, setPhotoData] = useState<PhotoData>({
-    photo_data: "",
-    photoId: "",
-    userId: "",
-    uploadedAt: "",
-  });
   const [isDownloading, setIsDownloading] = useState<boolean>(false);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  const [photoDetail, setPhotoDetail] = useState<PhotoDetails>(Object);
 
   useEffect(() => {
-    const loadPhotoData = () => {
-      //   console.log("Received params:", params);
+    const fetchPhotoDetail = async () => {
+      if (!params.photoId) return;
 
-      // Check if we have the required parameters
-      if (hasRequiredParams(params)) {
-        setPhotoData({
-          photo_data: params.photo_data || "",
-          photoId: params.photoId || "",
-          userId: params.userId || "",
-          uploadedAt: params.uploadedAt || new Date().toISOString(),
-        });
-        setIsLoading(false);
-      } else {
-        // Handle missing or invalid parameters
-        Alert.alert(
-          "Error",
-          "No photo data provided. Please go back and try again.",
-          [
-            {
-              text: "OK",
-              onPress: () => router.back(),
-            },
-          ]
+      try {
+        setIsLoading(true);
+        const response = await axios.get(
+          `https://unsurviving-melania-shroudlike.ngrok-free.dev/getPhoto/${params.userId}/${params.photoId}`,
         );
+        setPhotoDetail(response.data);
+      } catch (error) {
+        console.error("Fetch detail error:", error);
+        Alert.alert("Error", "Could not load photo details.");
+      } finally {
+        setIsLoading(false);
       }
     };
 
-    // Small delay to ensure params are loaded
-    const timer = setTimeout(loadPhotoData, 100);
-    return () => clearTimeout(timer);
-  }, [params]);
+    fetchPhotoDetail();
+  }, [params.photoId]);
 
-  // Handle back button press
   const handleBack = () => {
-    router.back();
+    router.push("/main");
   };
 
-  // Handle download photo
   const handleDownload = async (): Promise<void> => {
-    if (isDownloading || !photoData.photo_data) return;
+    if (isDownloading || !photoDetail.photo_data) return;
 
     try {
       setIsDownloading(true);
-
-      // For Expo, you can use expo-file-system and expo-sharing
-      // Example implementation:
-      // await downloadAndSavePhoto(photoData.photo, `photo_${photoData.photoId}.jpg`);
 
       Alert.alert("Success", "Photo downloaded successfully!", [
         { text: "OK" },
@@ -108,9 +75,8 @@ const PhotoViewerScreen: React.FC = () => {
     }
   };
 
-  // Handle delete photo
   const handleDelete = (): void => {
-    if (!photoData.photoId || !photoData.userId) {
+    if (!params.photoId || !params.userId) {
       Alert.alert("Error", "Cannot delete: Missing photo information");
       return;
     }
@@ -129,18 +95,14 @@ const PhotoViewerScreen: React.FC = () => {
           onPress: async () => {
             try {
               setIsDeleting(true);
-
-              // Implement your delete API call here
-              // Example: await deletePhoto(photoData.photoId, photoData.userId);
               axios.delete(
-                `https://unsurviving-melania-shroudlike.ngrok-free.dev/delete-photo/${params.photoId}`
+                `https://unsurviving-melania-shroudlike.ngrok-free.dev/delete-photo/${params.photoId}`,
               );
 
               Alert.alert("Success", "Photo deleted successfully!", [
                 {
                   text: "OK",
                   onPress: () => {
-                    // Navigate back after successful deletion
                     router.push("/main");
                   },
                 },
@@ -150,7 +112,7 @@ const PhotoViewerScreen: React.FC = () => {
               Alert.alert(
                 "Error",
                 "Failed to delete photo. Please try again.",
-                [{ text: "OK" }]
+                [{ text: "OK" }],
               );
             } finally {
               setIsDeleting(false);
@@ -158,11 +120,10 @@ const PhotoViewerScreen: React.FC = () => {
           },
         },
       ],
-      { cancelable: true }
+      { cancelable: true },
     );
   };
 
-  // Format the uploaded date
   const formatDate = (dateString: string): string => {
     try {
       const date = new Date(dateString);
@@ -183,7 +144,6 @@ const PhotoViewerScreen: React.FC = () => {
     }
   };
 
-  // Show loading state
   if (isLoading) {
     return (
       <SafeAreaView style={styles.safeArea}>
@@ -199,7 +159,6 @@ const PhotoViewerScreen: React.FC = () => {
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="light-content" backgroundColor="#000" />
 
-      {/* Top Bar with Back Button */}
       <View style={styles.topBar}>
         <TouchableOpacity
           style={styles.backButton}
@@ -213,13 +172,13 @@ const PhotoViewerScreen: React.FC = () => {
         <View style={styles.spacer} />
       </View>
 
-      {/* Main Content */}
       <View style={styles.container}>
-        {/* Photo Display */}
         <View style={styles.photoContainer}>
-          {photoData.photo_data ? (
+          {photoDetail.photo_data ? (
             <Image
-              source={{ uri: `data:image/jpeg;base64,${photoData.photo_data}` }}
+              source={{
+                uri: `data:image/jpeg;base64,${photoDetail.photo_data}`,
+              }}
               style={styles.photo}
               resizeMode="contain"
               onError={(error) => {
@@ -235,51 +194,26 @@ const PhotoViewerScreen: React.FC = () => {
           )}
         </View>
 
-        {/* Photo Info */}
         <View style={styles.infoContainer}>
-          {/* <View style={styles.infoRow}>
-            <Icon name="info" size={20} color="#666" />
-            <Text style={styles.infoLabel}>Photo ID: </Text>
-            <Text
-              style={styles.infoValue}
-              numberOfLines={1}
-              ellipsizeMode="tail"
-            >
-              {photoData.photoId || "N/A"}
-            </Text>
-          </View>
-
-          <View style={styles.infoRow}>
-            <Icon name="person" size={20} color="#666" />
-            <Text style={styles.infoLabel}>User ID: </Text>
-            <Text
-              style={styles.infoValue}
-              numberOfLines={1}
-              ellipsizeMode="tail"
-            >
-              {photoData.userId || "N/A"}
-            </Text>
-          </View> */}
-
           <View style={styles.infoRow}>
             <Icon name="schedule" size={20} color="#666" />
             <Text style={styles.infoLabel}>Uploaded At: </Text>
             <Text style={styles.infoValue} numberOfLines={2}>
-              {formatDate(photoData.uploadedAt)}
+              {formatDate(photoDetail.uploadedAt!)}
             </Text>
           </View>
         </View>
 
-        {/* Action Buttons */}
         <View style={styles.buttonContainer}>
           <TouchableOpacity
             style={[
               styles.button,
               styles.downloadButton,
-              (!photoData.photo_data || isDownloading) && styles.disabledButton,
+              (!photoDetail.photo_data || isDownloading) &&
+                styles.disabledButton,
             ]}
             onPress={handleDownload}
-            disabled={isDownloading || !photoData.photo_data}
+            disabled={isDownloading || !photoDetail.photo_data}
             activeOpacity={0.7}
           >
             {isDownloading ? (
@@ -296,10 +230,10 @@ const PhotoViewerScreen: React.FC = () => {
             style={[
               styles.button,
               styles.deleteButton,
-              (!photoData.photo_data || isDeleting) && styles.disabledButton,
+              (!photoDetail.photo_data || isDeleting) && styles.disabledButton,
             ]}
             onPress={handleDelete}
-            disabled={isDeleting || !photoData.photo_data}
+            disabled={isDeleting || !photoDetail.photo_data}
             activeOpacity={0.7}
           >
             {isDeleting ? (
@@ -315,7 +249,7 @@ const PhotoViewerScreen: React.FC = () => {
       </View>
     </SafeAreaView>
   );
-};
+}
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -438,5 +372,3 @@ const styles = StyleSheet.create({
     color: "#FFF",
   },
 });
-
-export default PhotoViewerScreen;

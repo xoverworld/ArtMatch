@@ -18,14 +18,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 type MatchResult = {
   photo: string;
-  author: string;
-  name: string;
-  category: string;
-  similarityDistance: string;
-  canSwap: string;
 };
 
-export default function MatchResults() {
+export default function SwaphResults() {
   const router = useRouter();
   const params = useLocalSearchParams<Partial<MatchResult>>();
   const [loading, setLoading] = useState(false);
@@ -55,36 +50,30 @@ export default function MatchResults() {
     );
   }
 
-  const handleSwap = async () => {
+  const handleSave = async () => {
     const userId = await AsyncStorage.getItem("userId");
     axios
       .post(
-        "https://unsurviving-melania-shroudlike.ngrok-free.dev/perform-swap",
+        "https://unsurviving-melania-shroudlike.ngrok-free.dev/upload-photo",
         {
-          UserPhotoBase64: params.photo,
-          MatchId: params.name,
-          Style: params.category,
+          UserId: userId,
+          Photo_data: params.photo,
         },
         { headers: { "Content-Type": "application/json" } },
       )
-      .then((response) => {
-        router.push({
-          pathname: "/main/swapResult",
-          params: {
-            photo: response.data.swappedPhotoBase64,
-          },
-        });
+      .then(() => {
+        Alert.alert("Success", "Photo uploaded!");
+        router.replace("/main");
       })
-      .catch((error) => {
-        Alert.alert("Error", "Failed to upload.");
-        console.error(error.response);
+      .catch(() => Alert.alert("Error", "Failed to upload."))
+      .finally(() => {
+        setLoading(false);
       });
   };
 
-  // const matchedImageUri = `data:image/jpeg;base64,${params.matched_photo}`;
-  const photoUri = `http://unsurviving-melania-shroudlike.ngrok-free.dev/image/${params.category}/${params.name}`;
-  // console.log(photoUri);
-  const swapable = params.canSwap === "true";
+  const photoUri = `data:image/jpeg;base64,${params.photo}`;
+  //   const photoUri = `http://unsurviving-melania-shroudlike.ngrok-free.dev/image/${params.category}/${params.name}`;
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -99,21 +88,6 @@ export default function MatchResults() {
         </View>
 
         <View style={styles.detailsContainer}>
-          <View style={styles.detailCard}>
-            <Text style={styles.label}>Author</Text>
-            <Text style={styles.value}>{params.author || "Unknown"}</Text>
-          </View>
-
-          <View style={styles.detailCard}>
-            <Text style={styles.label}>Name</Text>
-            <Text style={styles.value}>{params.name || "Unknown"}</Text>
-          </View>
-
-          <View style={styles.detailCard}>
-            <Text style={styles.label}>Category</Text>
-            <Text style={styles.value}>{params.category || "Unknown"}</Text>
-          </View>
-
           <View
             style={{
               flexDirection: "row",
@@ -134,17 +108,12 @@ export default function MatchResults() {
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[
-                styles.button,
-                { backgroundColor: "#2563EB" },
-                !swapable && styles.disabledButton,
-              ]}
+              style={[styles.button, { backgroundColor: "#2c8520" }]}
               activeOpacity={0.7}
-              disabled={!swapable}
-              onPress={handleSwap}
+              onPress={handleSave}
             >
-              <Icon name="compare-arrows" size={20} color="#FFF" />
-              <Text style={styles.buttonText}>Swap</Text>
+              <Icon name="check-circle" size={20} color="#FFF" />
+              <Text style={styles.buttonText}>Save</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -281,9 +250,5 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: "#FFF",
-  },
-  disabledButton: {
-    backgroundColor: "#666",
-    opacity: 0.5,
   },
 });

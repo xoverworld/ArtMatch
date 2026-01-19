@@ -36,7 +36,7 @@ export default function Index() {
       const userId = await AsyncStorage.getItem("userId");
       axios
         .get(
-          `https://unsurviving-melania-shroudlike.ngrok-free.dev/photos/${userId}`
+          `https://unsurviving-melania-shroudlike.ngrok-free.dev/photos/${userId}`,
         )
         .then(function (response) {
           setPhotos(response.data);
@@ -70,9 +70,7 @@ export default function Index() {
               pathname: "/main/photoPage",
               params: {
                 photoId: item.id,
-                photo_data: item.photo_data,
                 userId: item.userId,
-                uploadedAt: item.uploadedAt,
               },
             });
           }}
@@ -137,7 +135,6 @@ export default function Index() {
         />
       </View>
 
-      {/* Floating Camera Button */}
       <View
         style={[
           styles.fabContainer,
@@ -150,7 +147,6 @@ export default function Index() {
         <View style={{ alignItems: "center", justifyContent: "center" }}>
           <Link href="/main/cameraPage" asChild>
             <TouchableOpacity style={styles.fab}>
-              {/* 3. Replace Emoji with Icon */}
               <Ionicons name="camera" size={32} color="white" />
             </TouchableOpacity>
           </Link>
@@ -192,7 +188,7 @@ const styles = StyleSheet.create({
   menuButton: {
     padding: 8,
   },
-  // Removed menuIcon style as we pass size/color props directly to Icon component
+
   dropdown: {
     position: "absolute",
     top: 80,
@@ -249,7 +245,7 @@ const styles = StyleSheet.create({
     elevation: 4,
     marginBottom: 4,
   },
-  // Removed fabIcon style
+
   fabLabel: {
     color: "#4B5563",
     fontSize: 12,

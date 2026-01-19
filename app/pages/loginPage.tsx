@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import * as LocalAuthentication from "expo-local-authentication";
 import { Link, router } from "expo-router";
-import * as SecureStore from "expo-secure-store"; // Ensure this is imported for token access
+import * as SecureStore from "expo-secure-store";
 import React, { useEffect, useState } from "react";
 import {
   Alert,
@@ -16,7 +16,6 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-// Placeholder for ErrorCard style/component from previous exchange
 const ErrorCard = ({
   message,
   onDismiss,
@@ -47,14 +46,11 @@ const loginPage = () => {
   const [isBiometricSupported, setIsBiometricSupported] = useState(false);
   const [hasBiometricToken, setHasBiometricToken] = useState(false);
 
-  // --- Check Biometric Support on Load ---
   useEffect(() => {
     (async () => {
-      // Check device support
       const supported = await LocalAuthentication.hasHardwareAsync();
       setIsBiometricSupported(supported);
 
-      // Check if we already have a secure token saved
       const token = await SecureStore.getItemAsync("biometric_user_id");
       setHasBiometricToken(!!token);
     })();
@@ -65,7 +61,6 @@ const loginPage = () => {
     await handleLogin();
   };
 
-  // --- Password Login Logic ---
   const handleLogin = async () => {
     axios
       .post(
@@ -78,16 +73,14 @@ const loginPage = () => {
           headers: {
             "Content-Type": "application/json",
           },
-        }
+        },
       )
       .then(async function (response) {
         if (response.data.message === "Login successful.") {
           const receivedUserId = String(response.data.userId);
 
-          // 1. Save UserId to AsyncStorage (for regular session check)
           await AsyncStorage.setItem("userId", receivedUserId);
 
-          // 2. Offer to save token for biometric login
           if (isBiometricSupported && !hasBiometricToken) {
             Alert.alert(
               "Enable Biometric Login?",
@@ -97,16 +90,15 @@ const loginPage = () => {
                 {
                   text: "Enable",
                   onPress: async () => {
-                    // Save the user ID securely, linked to biometrics
                     await SecureStore.setItemAsync(
                       "biometric_user_id",
-                      receivedUserId
+                      receivedUserId,
                     );
                     setHasBiometricToken(true);
                     router.push("/main");
                   },
                 },
-              ]
+              ],
             );
           } else {
             router.push("/main");
@@ -122,7 +114,6 @@ const loginPage = () => {
       });
   };
 
-  // --- Biometric Login Logic ---
   const handleBiometricAuth = async () => {
     setErrorMessage("");
     try {
@@ -139,18 +130,15 @@ const loginPage = () => {
       });
 
       if (authResult.success) {
-        // 1. Retrieve the saved user ID token
-        const storedUserId = await SecureStore.getItemAsync(
-          "biometric_user_id"
-        );
+        const storedUserId =
+          await SecureStore.getItemAsync("biometric_user_id");
 
         if (storedUserId) {
-          // 2. Set the regular session storage and log in
           await AsyncStorage.setItem("userId", storedUserId);
-          router.replace("/main"); // Use replace to prevent going back to login
+          router.replace("/main");
         } else {
           setErrorMessage(
-            "Secure biometric token not found. Please log in with password."
+            "Secure biometric token not found. Please log in with password.",
           );
           setHasBiometricToken(false);
         }
@@ -181,7 +169,6 @@ const loginPage = () => {
           />
 
           <View style={styles.formContainer}>
-            {/* Biometric Button (Shown only if supported and token exists) */}
             {isBiometricSupported && hasBiometricToken && (
               <TouchableOpacity
                 style={styles.biometricButton}
@@ -241,7 +228,6 @@ const loginPage = () => {
   );
 };
 
-// --- ERROR CARD STYLES (Retained from previous exchange) ---
 const errorStyles = StyleSheet.create({
   container: {
     backgroundColor: "#FEF2F2",
@@ -330,7 +316,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#1F2937",
   },
-  // Primary Login Button
   button: {
     marginTop: 20,
     backgroundColor: "#2563EB",
@@ -352,10 +337,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "bold",
   },
-  // Biometric Button
   biometricButton: {
     marginTop: 0,
-    backgroundColor: "#F3F4F6", // Light gray background
+    backgroundColor: "#F3F4F6",
     height: 50,
     borderRadius: 12,
     justifyContent: "center",
@@ -368,7 +352,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
   },
-  // Divider Styles
   divider: {
     flexDirection: "row",
     alignItems: "center",

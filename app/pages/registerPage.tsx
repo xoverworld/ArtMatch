@@ -40,7 +40,7 @@ const registerPage = () => {
             headers: {
               "Content-Type": "application/json",
             },
-          }
+          },
         )
         .then(function (response) {
           console.log(response.data.message);
@@ -128,7 +128,7 @@ const registerPage = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F9FAFB", // Light gray background
+    backgroundColor: "#F9FAFB",
   },
   keyboardView: {
     flex: 1,
@@ -174,7 +174,7 @@ const styles = StyleSheet.create({
   },
   button: {
     marginTop: 32,
-    backgroundColor: "#2563EB", // Modern blue
+    backgroundColor: "#2563EB",
     height: 50,
     borderRadius: 12,
     justifyContent: "center",
@@ -210,16 +210,15 @@ const styles = StyleSheet.create({
 });
 const errorStyles = StyleSheet.create({
   container: {
-    backgroundColor: "#FEF2F2", // Soft red background
+    backgroundColor: "#FEF2F2",
     borderLeftWidth: 4,
-    borderLeftColor: "#EF4444", // Bright red accent
+    borderLeftColor: "#EF4444",
     borderRadius: 8,
     padding: 16,
     marginBottom: 20,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "flex-start",
-    // Shadow
     shadowColor: "#EF4444",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -230,13 +229,13 @@ const errorStyles = StyleSheet.create({
     flex: 1,
   },
   title: {
-    color: "#991B1B", // Dark red title
+    color: "#991B1B",
     fontWeight: "bold",
     fontSize: 14,
     marginBottom: 2,
   },
   message: {
-    color: "#B91C1C", // Slightly lighter red text
+    color: "#B91C1C",
     fontSize: 13,
   },
 });
